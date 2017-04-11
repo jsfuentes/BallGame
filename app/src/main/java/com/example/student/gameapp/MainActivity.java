@@ -9,6 +9,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
+import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -17,6 +18,10 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Random;
+
+import com.example.student.gameapp.utils.HighScoreHelper;
+import com.example.student.gameapp.utils.SimpleAlertDialog;
+import com.example.student.gameapp.utils.SoundHelper;
 
 public class MainActivity extends AppCompatActivity 
     implements Balloon.BalloonListener{
@@ -29,6 +34,7 @@ public class MainActivity extends AppCompatActivity
     private static final int[] LIFECYCLE = new int[] {R.drawable.ic_signal_wifi_4_bar_black_24dp,
             R.drawable.ic_signal_wifi_3_bar_black_24dp, R.drawable.ic_signal_wifi_2_bar_black_24dp,
             R.drawable.ic_signal_wifi_1_bar_black_24dp, R.drawable.ic_signal_wifi_0_bar_black_24dp};
+    private static final int BALLOONS_PER_LEVEL = 10;
 
     private int[] mBalloonColors = new int[3];
     private int mNextColor, mScreenWidth, mScreenHeight;
@@ -37,6 +43,11 @@ public class MainActivity extends AppCompatActivity
     TextView mScoreDisplay, mLevelDisplay;
     private ImageView mLifeBar;
     private List<Balloon> mBalloons = new ArrayList<>();
+    private Button mGoButton;
+    private boolean mPlaying;
+    private boolean mGameStopped = true;
+    private int mBalloonsPopped;
+    private SoundHelper mSoundHelper;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -75,8 +86,11 @@ public class MainActivity extends AppCompatActivity
         mLevelDisplay = (TextView) findViewById(R.id.level_display);
         mLifeBar = (ImageView) findViewById(R.id.imageView);
         mLifeBar.setImageResource(LIFECYCLE[mLivesLost]);
+        mGoButton = (Button) findViewById(R.id.go_button);
         updateDisplay();
 
+        mSoundHelper = new SoundHelper(this);
+        mSoundHelper.prepareMusicPlayer(this);
 //        mContentView.setOnTouchListener(new View.OnTouchListener() {
 //            @Override
 //            public boolean onTouch(View v, MotionEvent event) {
@@ -114,19 +128,48 @@ public class MainActivity extends AppCompatActivity
         setToFullScreen();
     }
 
+    private void startGame() {
+        setToFullScreen();
+        mScore = 0;
+        mLevel = 0;
+        mLivesLost = 0;
+        mLifeBar.setImageResource(R.drawable.ic_signal_wifi_4_bar_black_24dp);
+        mGameStopped = false;
+        startLevel();
+        mSoundHelper.playMusic();
+    }
+
     private void startLevel(){
         mLevel++;
         updateDisplay();
         BalloonLauncher launcher = new BalloonLauncher();
         launcher.execute(mLevel);
+        mPlaying = true;
+        mBalloonsPopped = 0;
+        mGoButton.setText("End Game");
+    }
+
+    private void finishLevel() {
+        Toast.makeText(this, String.format("You finished level %d", mLevel),
+                Toast.LENGTH_SHORT).show();
+        mPlaying = false;
+        mGoButton.setText(String.format("Start level %d", mLevel+1));
     }
 
     public void goButtonClickHandler(View view) {
-        startLevel();
+        if (mPlaying){
+            gameOver(false);
+        } else if (mGameStopped){
+            startGame();
+        } else {
+            startLevel();
+        }
     }
 
     @Override
     public void popBalloon(Balloon balloon, boolean userTouch) {
+        mBalloonsPopped++;
+        mSoundHelper.playSound();
         mContentView.removeView(balloon);
         mBalloons.remove(balloon);
 
@@ -146,16 +189,35 @@ public class MainActivity extends AppCompatActivity
             }
         }
         updateDisplay();
+
+        if (mBalloonsPopped == BALLOONS_PER_LEVEL){
+            finishLevel();
+        }
     }
 
-    private void gameOver(boolean b) {
+    private void gameOver(boolean allLivesLost) {
         Toast.makeText(this, "GAME OVER!", Toast.LENGTH_SHORT).show();
+        mSoundHelper.pauseMusic();
+
         for (Balloon balloon : mBalloons) {
             mContentView.removeView(balloon);
             balloon.setPopped(true);
         }
         mBalloons.clear();
+        mPlaying = false;
+        mGoButton.setText("Start Game");
+        mGameStopped = true;
 
+        if(allLivesLost){
+            if ( HighScoreHelper.isTopScore(this, mScore) ) {
+                HighScoreHelper.setTopScore(this, mScore);
+                SimpleAlertDialog dialog = SimpleAlertDialog.newInstance("New High Score!",
+                        String.format("Your new high score is %d", mScore));
+                dialog.show(getSupportFragmentManager(), null);
+            } else {
+
+            }
+        }
     }
 
     private void updateDisplay() {
@@ -179,7 +241,7 @@ public class MainActivity extends AppCompatActivity
             int minDelay = maxDelay / 2;
 
             int balloonsLaunched = 0;
-            while (balloonsLaunched < 3) {
+            while (balloonsLaunched < BALLOONS_PER_LEVEL && mPlaying) {
 
 //              Get a random horizontal position for the next balloon
                 Random random = new Random(new Date().getTime());
