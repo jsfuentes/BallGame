@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Game App</string>
+    <string name="app_name">Balld</string>
     <string name="level_label">Level:</string>
     <string name="score_label">Score:</string>
     <string name="max_number">99</string>
